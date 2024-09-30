@@ -1,0 +1,166 @@
+-- CREATE Fact table Fact_ProductSalesTarget
+CREATE OR REPLACE TABLE Fact_ProductSalesTarget (
+    DimProductID NUMBER(38,0) CONSTRAINT FK_DimProductID FOREIGN KEY REFERENCES Dim_Product(DimProductID)
+    ,DimTargetDateID NUMBER(9) CONSTRAINT FK_DimTargetDateID FOREIGN KEY REFERENCES Dim_Date(DATE_PKEY)
+    ,ProductTargetSalesQuantity NUMBER(38,0)
+);
+
+
+-- Load Data for Fact_ProductSalesTarget
+INSERT INTO Fact_ProductSalesTarget (
+    DimProductID
+    ,DimTargetDateID
+    ,ProductTargetSalesQuantity
+)
+    SELECT 
+        dp.PRODUCTID
+        ,d.DATE_PKEY
+        ,ps.SALESQUANTITYTARGET / 365 AS ProductTargetSalesQuantity 
+
+    FROM STAGE_TARGET_DATA_PRODUCT ps
+    INNER JOIN Dim_Product dp ON  dp.PRODUCTID = ps.PRODUCTID
+    INNER JOIN Dim_Date d ON d.YEAR = ps.TARGETYEAR
+    GROUP BY dp.PRODUCTID,d.DATE_PKEY,ps.salesquantitytarget;
+
+SELECT * FROM Fact_ProductSalesTarget
+ORDER BY DimProductID, DIMTARGETDATEID;
+
+-- CREATE Fact table Fact_SRCSalesTarget
+CREATE OR REPLACE TABLE Fact_SRCSalesTarget (
+    DimStoreID NUMBER(38,0) CONSTRAINT FK_DimStoreID FOREIGN KEY REFERENCES Dim_Store(DimStoreID)
+    ,DimResellerID NUMBER(38,0) CONSTRAINT FK_ResellerID FOREIGN KEY REFERENCES Dim_Reseller(DimResellerID)
+    ,DimChannelID NUMBER(38,0) CONSTRAINT FK_ChannelID FOREIGN KEY REFERENCES Dim_Channel(DimChannelID)
+    ,DimTargetDateID NUMBER(9) CONSTRAINT FK_DimTargetDateID FOREIGN KEY REFERENCES Dim_Date(DATE_PKEY)
+    ,SalesTargetAmount NUMBER(38,0)
+);
+
+
+-- Load Data for Fact_SRCSalesTarget
+INSERT INTO Fact_SRCSalesTarget(
+    DimStoreID
+    ,DimResellerID
+    ,DimChannelID
+    ,DimTargetDateID
+    ,SalesTargetAmount
+)
+SELECT 
+    NVL(ds.DIMSTOREID, -1) AS DimStoreID,              -- Using NVL to replace NULLs with -1
+    NVL(dr.DIMRESELLERID, -1) AS DimResellerID,        -- Using NVL to replace NULLs with -1
+    dc.DIMCHANNELID,
+    d.DATE_PKEY,
+    stc.TARGETSALESAMOUNT / 365 AS SalesTargetAmount 
+FROM 
+    STAGE_TARGET_DATA_CHANNEL stc
+LEFT JOIN 
+    Dim_Reseller dr ON dr.RESELLERNAME = 
+        CASE 
+            WHEN stc.TARGETNAME = 'mississipi distributors' THEN 'mississippi distributors' 
+            ELSE stc.TARGETNAME 
+        END
+LEFT JOIN 
+    Dim_Store ds  ON ds.StoreNumber = 
+       CASE
+            WHEN stc.TARGETNAME LIKE 'Store Number %' 
+                THEN TO_NUMBER(REGEXP_REPLACE(stc.TARGETNAME, 'Store Number ', ''))
+            ELSE NULL
+        END
+        
+INNER JOIN 
+    Dim_Channel dc ON dc.CHANNELNAME = 
+        CASE 
+            WHEN stc.CHANNELNAME = 'on-line' THEN 'online' 
+            ELSE stc.CHANNELNAME 
+        END
+INNER JOIN 
+    Dim_Date d ON d.YEAR = stc.TARGETYEAR
+GROUP BY 
+    ds.DIMSTOREID, dr.DIMRESELLERID, dc.DIMCHANNELID, d.DATE_PKEY, stc.TARGETSALESAMOUNT;
+
+
+
+    
+-- CREATE Fact table Fact_SalesActual
+CREATE OR REPLACE TABLE Fact_SalesActual (
+    DimProductID NUMBER(38,0) CONSTRAINT FK_DimProductID FOREIGN KEY REFERENCES Dim_Product(DimProductID)
+    ,DimStoreID NUMBER(38,0) CONSTRAINT FK_DimStoreID FOREIGN KEY REFERENCES Dim_Store(DimStoreID)
+    ,DimResellerID NUMBER(38,0) CONSTRAINT FK_ResellerID FOREIGN KEY REFERENCES Dim_Reseller(DimResellerID)
+    ,DimCustomerID NUMBER(38,0) CONSTRAINT FK_CustomerID FOREIGN KEY REFERENCES Dim_Customer(DimCustomerID)
+    ,DimChannelID NUMBER(38,0) CONSTRAINT FK_ChannelID FOREIGN KEY REFERENCES Dim_Channel(DimChannelID)
+    ,DimSaleDateID NUMBER(9,0) CONSTRAINT FK_DimSaleDateID FOREIGN KEY REFERENCES Dim_Date(DATE_PKEY)
+    ,DimLocationID NUMBER(38,0) CONSTRAINT FK_DimLocationID FOREIGN KEY REFERENCES Dim_Location(DimLocationID)
+    ,SalesHeaderID NUMBER(38,0)
+    ,SalesDetailID NUMBER(38,0)
+    ,SaleAmount NUMBER(38,0)
+    ,SaleQuantity NUMBER(38,0)
+    ,SaleUnitPrice NUMBER(38,0)
+    ,SaleExtendedCost NUMBER(38,0)
+    ,SaleTotalProfit NUMBER(38,0)
+);
+
+INSERT INTO Fact_SalesActual (
+    DimProductID
+    ,DimStoreID
+    ,DimResellerID
+    ,DimCustomerID
+    ,DimChannelID
+    ,DimSaleDateID
+    ,DimLocationID
+    ,SalesHeaderID
+    ,SalesDetailID
+    ,SaleAmount
+    ,SaleQuantity
+    ,SaleUnitPrice
+    ,SaleExtendedCost
+    ,SaleTotalProfit
+)
+    SELECT 
+        dp.PRODUCTID
+        ,NVL(ds.DIMSTOREID, -1) AS DimStoreID          -- Replace NULLs in DimStoreID with -1
+        ,NVL(dr.DIMRESELLERID, -1) AS DimResellerID      -- Replace NULLs in DimResellerID with -1
+        ,c.DIMCUSTOMERID
+        ,ch.DIMCHANNELID
+        ,d.DATE_PKEY
+        ,NVL(l.DIMLOCATIONID, -1) AS DimLocationID       -- Replace NULLs in DimLocationID with -1
+        ,sh.SALESHEADERID
+        ,sd.SALESDETAILID
+        ,sd.SALESAMOUNT
+        ,sd.SALESQUANTITY
+        ,dp.PRODUCTRETAILPRICE
+        ,(sd.SALESQUANTITY * dp.PRODUCTRETAILPRICE) AS SaleExtendedCost,
+    CASE 
+        WHEN (sd.SALESAMOUNT / sd.SALESQUANTITY) = dp.PRODUCTRETAILPRICE 
+            THEN (dp.PRODUCTRETAILPROFIT * sd.SALESQUANTITY)
+        ELSE 
+            (dp.PRODUCTWHOLESALEUNITPROFIT * sd.SALESQUANTITY) 
+    END AS SaleTotalProfit
+    FROM
+        STAGE_SALES_DETAIL sd
+        INNER JOIN STAGE_SALES_HEADER sh ON sd.SALESHEADERID = sh.SALESHEADERID
+        LEFT JOIN Dim_Product dp on sd.PRODUCTID = dp.PRODUCTID
+        LEFT JOIN Dim_Store ds ON sh.STOREID = ds.DIMSTOREID
+        LEFT JOIN Dim_Customer c ON sh.CUSTOMERID = c.CUSTOMERID
+        LEFT JOIN Dim_Channel ch ON sh.CHANNELID = ch.CHANNELID
+        LEFT JOIN Dim_Reseller dr ON sh.RESELLERID = dr.RESELLERID
+        left JOIN Dim_Location l ON ds.DIMLOCATIONID = l.DIMLOCATIONID
+        LEFT JOIN DIM_DATE d ON d.DATE_PKEY = TO_NUMBER(TO_CHAR(TO_DATE(sh.SALESDATE, 'MM/DD/YY'), 'YYYYMMDD'));
+
+
+SELECT * FROM FACT_PRODUCTSALESTARGET; -- 17,520 ROWS
+SELECT * FROM FACT_SALESACTUAL; -- 187,320 ROWS
+SELECT * FROM FACT_SRCSALESTARGET; -- 7,300 ROWS
+
+SELECT 
+    SUBSTRING(CAST(fsa.DIMSALEDATEID AS VARCHAR), 1, 4) AS SaleYear,
+    fsa.DIMSTOREID,
+    SUM(fsa.SALEAMOUNT) AS TotalSalesAmount
+FROM 
+    FACT_SALESACTUAL fsa
+WHERE 
+    fsa.DIMSTOREID IN (1, 6)
+GROUP BY 
+    SUBSTRING(CAST(fsa.DIMSALEDATEID AS VARCHAR), 1, 4),
+    fsa.DIMSTOREID
+ORDER BY 
+    SaleYear, 
+    fsa.DIMSTOREID;
+
