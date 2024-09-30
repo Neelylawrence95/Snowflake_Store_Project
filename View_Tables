@@ -1,0 +1,329 @@
+-- USE WAREHOUSE
+USE WAREHOUSE IMT577_DW_LAW_NEELY
+
+-- USE DATABASE
+USE DATABASE "IMT577_DB_LAW_NEELY";
+
+-- Create secure pass-through view for Dim_Store
+CREATE OR REPLACE SECURE VIEW View_Dim_Store AS
+SELECT
+    DimStoreID
+    ,DimLocationID
+    ,SourceStoreID
+    ,StoreNumber
+    ,StoreManager
+FROM 
+    Dim_Store;
+    
+-- Create secure pass-through view for Dim_Product
+CREATE OR REPLACE SECURE VIEW View_Dim_Product AS
+SELECT
+    DimProductID
+    ,ProductID
+    ,ProductTypeID
+    ,ProductCategoryID
+    ,ProductName
+    ,ProductType
+    ,ProductCategory
+    ,ProductRetailPrice
+    ,ProductWholesalePrice
+    ,ProductCost
+    ,ProductRetailProfit
+    ,ProductWholesaleUnitProfit
+    ,ProductProfitMarginUnitPercent
+FROM 
+    Dim_Product;
+
+-- Create secure pass-through view for Dim_Customer
+CREATE OR REPLACE SECURE VIEW View_Dim_Customer AS 
+SELECT 
+    DimCustomerID
+    ,DimLocationID
+    ,CustomerID
+    ,CustomerFullName
+    ,CustomerFirstName
+    ,CustomerLastName
+    ,CustomerGender
+FROM 
+    Dim_Customer;
+
+-- Create secure pass-through view for Dim_Channel
+CREATE OR REPLACE SECURE VIEW View_Dim_Channel AS 
+SELECT
+    DimChannelID
+    ,ChannelID
+    ,ChannelCategoryID
+    ,ChannelName
+    ,ChannelCategory
+FROM
+    Dim_Channel;
+
+-- Create secure pass-through view for Dim_Location
+CREATE OR REPLACE SECURE VIEW View_Dim_Location AS 
+SELECT 
+    DimLocationID
+    ,Address
+    ,City
+    ,PostalCode
+    ,StateProvince
+    ,Country
+FROM 
+    Dim_Location;
+
+-- Create secure pass-through view for Dim_Reseller
+CREATE OR REPLACE SECURE VIEW View_Dim_Reseller AS 
+SELECT 
+    DimResellerID
+    ,DimLocationID
+    ,ResellerID
+    ,ResellerName
+    ,ContactName
+    ,PhoneNumber
+    ,Email
+FROM 
+    Dim_Reseller;
+
+-- Create secure pass-through view for Dim_Date
+CREATE OR REPLACE SECURE VIEW View_Dim_Date AS 
+SELECT 
+    CURRENT_ROW_IND
+    ,DATE
+    ,DATE_PKEY
+    ,DAY_ABBREV
+    ,DAY_NAME
+    ,DAY_NUM_IN_MONTH
+    ,DAY_NUM_IN_WEEK
+    ,DAY_NUM_IN_YEAR
+    ,EFFECTIVE_DATE
+    ,EXPIRATION_DATE
+    ,FISCAL_HALFYEAR
+    ,FISCAL_MONTH_NUM
+    ,FISCAL_QUARTER
+    ,FISCAL_WEEK_NUM
+    ,FISCAL_YEAR
+    ,FISCAL_YEARMONTH
+    ,FISCAL_YEARQUARTER
+    ,FULL_DATE_DESC
+    ,MONTH_ABBREV
+    ,MONTH_END_IND
+    ,MONTH_NAME
+    ,MONTH_NUM_IN_YEAR
+    ,QUARTER
+    ,SQL_TIMESTAMP
+    ,US_HOLIDAY_IND
+    ,WEEKDAY_IND
+    ,WEEK_BEGIN_DATE
+    ,WEEK_BEGIN_DATE_NKEY
+    ,WEEK_END_DATE
+    ,WEEK_END_DATE_NKEY
+    ,WEEK_NUM_IN_YEAR
+    ,YEAR
+    ,YEARMONTH
+    ,YEARQUARTER
+    ,_HOLIDAY_IND
+FROM
+    Dim_Date;
+    
+-- Create secure pass-through view for Fact_SalesActual
+CREATE OR REPLACE SECURE VIEW View_Fact_SalesActual AS
+SELECT
+    DimProductID
+    ,DimStoreID
+    ,DimResellerID
+    ,DimCustomerID
+    ,DimChannelID
+    ,DimSaleDateID
+    ,DimLocationID
+    ,SalesHeaderID
+    ,SalesDetailID
+    ,SaleAmount
+    ,SaleQuantity
+    ,SaleUnitPrice
+    ,SaleExtendedCost
+    SaleTotalProfit
+FROM 
+    Fact_SalesActual;
+
+-- Create secure pass-through view for Fact_ProductSalesTarget
+CREATE OR REPLACE SECURE VIEW View_Fact_ProductSalesTarget AS
+SELECT
+    DimProductID
+    ,DimTargetDateID
+    ,ProductTargetSalesQuantity
+FROM
+    Fact_ProductSalesTarget;
+
+-- Create secure pass-through view for Fact_SRCSalesTarget
+CREATE OR REPLACE SECURE VIEW View_Fact_SRCSalesTarget AS
+SELECT 
+    DimStoreID
+    ,DimResellerID
+    ,DimChannelID
+    ,DimTargetDateID
+    ,SalesTargetAmount
+FROM
+    Fact_SRCSalesTarget;
+    
+-- CREATE VIEW FOR OVERALL ASSESSMENT OF STORES 5 AND 8
+CREATE OR REPLACE SECURE VIEW View_Store_Performance AS
+SELECT
+    sa.DimStoreID,
+    ds.StoreNumber,
+    d.YEAR,
+    d.MONTH_NUM_IN_YEAR,
+    d.DATE,
+    SUM(sa.SaleAmount) AS TotalSales,
+    SUM(st.ProductTargetSalesQuantity) AS TargetSalesQuantity,
+    SUM(sa.SaleAmount) - SUM(st.ProductTargetSalesQuantity) AS PerformanceDifference,
+    SUM(sa.SaleTotalProfit) AS TotalProfit
+FROM
+    Fact_SalesActual sa
+INNER JOIN
+    Dim_Store ds ON sa.DimStoreID = ds.DimStoreID
+INNER JOIN
+    Dim_Date d ON sa.DimSaleDateID = d.DATE_PKEY
+LEFT JOIN
+    Fact_ProductSalesTarget st ON sa.DimProductID = st.DimProductID AND sa.DimSaleDateID = st.DimTargetDateID
+WHERE
+    sa.DimStoreID IN (1,6)
+GROUP BY
+    sa.DimStoreID, ds.StoreNumber, d.YEAR, d.MONTH_NUM_IN_YEAR,d.DATE;
+
+
+
+SELECT * FROM VIEW_STORE_PERFORMANCE;
+
+
+-- CREATE VIEW FOR BONUS AMOUNTS FOR MEN AND WOMEN CASUALS
+CREATE OR REPLACE SECURE VIEW View_Store_Bonus AS
+SELECT 
+    sa.DimStoreID
+    ,d.StoreNumber
+    ,spt.PRODUCTTYPE
+    ,SUM(CASE WHEN sa.DimSaleDateID BETWEEN 20130101 AND 20131231 THEN sa.SaleTotalProfit ELSE 0 END) AS Profit2013
+    ,SUM(CASE WHEN sa.DimSaleDateID BETWEEN 20140101 AND 20141231 THEN sa.SaleTotalProfit ELSE 0 END) AS Profit2014
+    ,SUM(CASE WHEN sa.DimSaleDateID BETWEEN 20130101 AND 20131231 THEN sa.SaleTotalProfit ELSE 0 END) / (SELECT SUM(SaleTotalProfit) FROM Fact_SalesActual WHERE DimSaleDateID BETWEEN 20130101 AND 20131231) * 500000 AS Bonus2013
+    ,SUM(CASE WHEN sa.DimSaleDateID BETWEEN 20140101 AND 20141231 THEN sa.SaleTotalProfit ELSE 0 END) / (SELECT SUM(SaleTotalProfit) FROM Fact_SalesActual WHERE DimSaleDateID BETWEEN 20140101 AND 20141231) * 400000 AS Bonus2014
+FROM 
+    Fact_SalesActual sa
+INNER JOIN 
+    Dim_Store d ON sa.DimStoreID = d.DimStoreID
+INNER JOIN 
+    Dim_Product p ON sa.DimProductID = p.DimProductID
+INNER JOIN 
+    Stage_Product_Type spt ON p.ProductTypeID = spt.ProductTypeID
+WHERE 
+    spt.ProductType IN ('Men\'s Casual', 'Women\'s Casual')
+GROUP BY 
+    spt.producttype,sa.DimStoreID, d.StoreNumber;
+
+SELECT * FROM View_Store_Bonus;
+
+-- CREATE VIEW FOR SALES TRENDS BY DAY OF THE WEEK FOR STORES 5 AND 8
+CREATE OR REPLACE SECURE VIEW View_Multi_vs_Single_Store_States AS
+WITH UniqueStores AS (
+    SELECT DISTINCT 
+        s.DimStoreID, 
+        l.StateProvince
+    FROM 
+        Dim_Store s
+    INNER JOIN 
+        Dim_Location l ON s.DimLocationID = l.DimLocationID
+)
+SELECT 
+    us.StateProvince,
+    COUNT(DISTINCT us.DimStoreID) AS StoreCount, -- Ensures unique store count
+    SUM(sa.SaleAmount) AS TotalSalesAmount, -- Adds total sales amount by state
+    AVG(sa.SaleAmount) AS AvgSalesAmount, -- Adds average total sales amount by state
+    CASE 
+        WHEN COUNT(DISTINCT us.DimStoreID) > 1 THEN 'Multiple Stores'
+        ELSE 'Single Store'
+    END AS StoreType
+FROM 
+    UniqueStores us
+LEFT JOIN 
+    Fact_SalesActual sa ON us.DimStoreID = sa.DimStoreID
+INNER JOIN 
+    Dim_Store ds on sa.DIMSTOREID = ds.dimstoreid
+GROUP BY 
+    us.StateProvince,us.dimstoreid,ds.storenumber;
+
+
+SELECT * FROM View_Multi_vs_Single_Store_States;
+
+-- CREATE VIEW SALES VS TARGETS COMPARISON
+CREATE OR REPLACE SECURE VIEW View_Sales_vs_Target AS
+SELECT
+    dd.YEAR AS Year,  -- Use the YEAR column directly
+    ds.StoreNumber,
+    CASE
+        WHEN ds.StoreNumber = 5 AND dd.YEAR = 2013 THEN 72827000
+        WHEN ds.StoreNumber = 5 AND dd.YEAR = 2014 THEN 82000000
+        WHEN ds.StoreNumber = 8 AND dd.YEAR = 2013 THEN 40262000
+        WHEN ds.StoreNumber = 8 AND dd.YEAR = 2014 THEN 33250500
+        ELSE 0
+    END AS TargetSalesAmount,
+    SUM(fsa.SaleAmount) AS TotalSalesAmount
+FROM
+    Fact_SalesActual fsa
+INNER JOIN
+    Dim_Store ds ON fsa.DimStoreID = ds.DimStoreID
+INNER JOIN
+    Dim_Date dd ON fsa.DimSaleDateID = dd.DATE_PKEY
+WHERE
+    fsa.DimStoreID IN (1, 6)
+GROUP BY
+    dd.YEAR,  -- Group by the YEAR column
+    ds.StoreNumber;
+
+SELECT * FROM view_Sales_vs_Target;
+
+
+-- CREATE VIEW SALE TRENDS BY DAY 
+CREATE OR REPLACE SECURE VIEW View_Sales_Trends_By_Day AS
+SELECT
+    sa.DimStoreID,
+    ds.StoreNumber,
+    d.DATE,
+    d.DAY_NUM_IN_YEAR,
+    SUM(sa.SaleAmount) AS TotalSales,
+    SUM(sa.SaleTotalProfit) AS TotalProfit
+FROM
+    Fact_SalesActual sa
+INNER JOIN
+    Dim_Store ds ON sa.DimStoreID = ds.DimStoreID
+INNER JOIN
+    Dim_Date d ON sa.DimSaleDateID = d.DATE_PKEY
+WHERE
+    sa.DimStoreID IN (1, 6)
+GROUP BY
+    sa.DimStoreID, ds.StoreNumber, d.DAY_NUM_IN_YEAR, d.date;
+
+SELECT * FROM View_Sales_Trends_By_Day;
+
+-- CREATE VIEW FOR PROFITABILITY CATEGORY 
+CREATE OR REPLACE SECURE VIEW View_Profitability_By_Category AS
+SELECT
+  sa.dimstoreid,
+  ds.storenumber,
+  p.productcategoryid,
+  pc.productcategoryname,
+  SUM(sa.saleamount) AS TotalSales,
+  SUM(sa.saletotalprofit) AS TotalProfit
+FROM
+  fact_salesactual sa
+  INNER JOIN dim_store ds ON sa.dimstoreid = ds.dimstoreid
+  INNER JOIN dim_product p ON sa.dimproductid = p.dimproductid
+  INNER JOIN stage_product_category pc ON p.productcategoryid = pc.productcategoryid
+WHERE
+  sa.dimstoreid IN (1, 6)
+GROUP BY
+  sa.dimstoreid,
+  ds.storenumber,
+  p.productcategoryid,
+  pc.productcategoryname;
+
+SELECT * FROM View_Profitability_By_Category;
+
+
+
